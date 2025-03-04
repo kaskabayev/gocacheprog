@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/kaskabayev/gocache/protocol"
-	"github.com/kaskabayev/gocache/storage"
+	"github.com/kaskabayev/gocacheprog/protocol"
+	"github.com/kaskabayev/gocacheprog/storage"
 )
 
 // Server handles the cache protocol communication

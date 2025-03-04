@@ -2,24 +2,25 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"flag"
 	"log"
 	"os"
 	"path/filepath"
 
-	"github.com/kaskabayev/gocache/server"
-	"github.com/kaskabayev/gocache/storage"
+	"github.com/kaskabayev/gocacheprog/server"
+	"github.com/kaskabayev/gocacheprog/storage"
 )
 
 func main() {
 	cacheDir := flag.String("cache-dir", "", "Path to the cache directory")
 	flag.Parse()
 	if *cacheDir == "" {
-		home, err := os.UserHomeDir()
+		userCache, err := os.UserCacheDir()
 		if err != nil {
 			log.Fatalf("Failed to get user home directory: %v", err)
 		}
-		*cacheDir = filepath.Join(home, ".gocacheprog")
+		*cacheDir = filepath.Join(userCache, ".gocacheprog")
 	}
 	if err := os.MkdirAll(*cacheDir, 0755); err != nil {
 		log.Fatalf("Failed to create cache directory %s: %v", *cacheDir, err)
@@ -43,7 +44,7 @@ func main() {
 	}
 
 	// Process requests until EOF
-	if err := cacheServer.ProcessRequests(nil); err != nil {
+	if err := cacheServer.ProcessRequests(context.Background()); err != nil {
 		log.Fatalf("Error processing requests: %v", err)
 	}
 }
