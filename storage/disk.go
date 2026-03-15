@@ -49,7 +49,12 @@ func (d *DiskCache) Put(ctx context.Context, actionID string, outputID string, r
 	// output ID file
 	outputPath := filepath.Join(d.outputsPath, outputID)
 	if _, err := os.Stat(outputPath); err == nil {
+		if err := d.writeMapping(actionID, outputID); err != nil {
+			return "", err
+		}
 		return outputPath, nil
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("stating output file: %w", err)
 	}
 
 	// 1. Write output payload atomically via temp file
@@ -65,34 +70,62 @@ func (d *DiskCache) Put(ctx context.Context, actionID string, outputID string, r
 		os.Remove(tempOutputPath)
 		return "", fmt.Errorf("writing to temp output file: %w", err)
 	}
-	tempOutput.Close()
-
-	if err := os.Rename(tempOutputPath, outputPath); err != nil {
+	if err := tempOutput.Sync(); err != nil {
+		tempOutput.Close()
 		os.Remove(tempOutputPath)
-		return "", fmt.Errorf("renaming output file: %w", err)
+		return "", fmt.Errorf("syncing temp output file: %w", err)
+	}
+	if err := tempOutput.Close(); err != nil {
+		os.Remove(tempOutputPath)
+		return "", fmt.Errorf("closing temp output file: %w", err)
 	}
 
+	if err := d.publishOutput(tempOutputPath, outputPath); err != nil {
+		return "", err
+	}
+
+	if err := d.writeMapping(actionID, outputID); err != nil {
+		return "", err
+	}
+
+	return outputPath, nil
+}
+
+func (d *DiskCache) publishOutput(tempOutputPath string, outputPath string) error {
+	if err := os.Link(tempOutputPath, outputPath); err != nil {
+		_ = os.Remove(tempOutputPath)
+		if os.IsExist(err) {
+			return nil
+		}
+		return fmt.Errorf("linking output file: %w", err)
+	}
+
+	_ = os.Remove(tempOutputPath)
+	return nil
+}
+
+func (d *DiskCache) writeMapping(actionID string, outputID string) error {
 	// 2. Write action mapping atomically via temp file
 	mappingPath := filepath.Join(d.actionsPath, actionID)
 	tempMapping, err := os.CreateTemp(d.actionsPath, actionID+".tmp.*")
 	if err != nil {
-		return "", fmt.Errorf("creating temp mapping file: %w", err)
+		return fmt.Errorf("creating temp mapping file: %w", err)
 	}
 	tempMappingPath := tempMapping.Name()
 
 	if _, err := tempMapping.Write([]byte(outputID)); err != nil {
 		tempMapping.Close()
 		os.Remove(tempMappingPath)
-		return "", fmt.Errorf("writing temp mapping file: %w", err)
+		return fmt.Errorf("writing temp mapping file: %w", err)
 	}
 	tempMapping.Close()
 
 	if err := os.Rename(tempMappingPath, mappingPath); err != nil {
 		os.Remove(tempMappingPath)
-		return "", fmt.Errorf("renaming mapping file: %w", err)
+		return fmt.Errorf("renaming mapping file: %w", err)
 	}
 
-	return outputPath, nil
+	return nil
 }
 
 // Get retrieves data from the cache based on the actionID
