@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 const (
@@ -26,6 +27,7 @@ type DiskCache struct {
 	rootDir     string
 	actionsPath string
 	outputsPath string
+	locks       sync.Map // map[actionID string]*sync.Mutex
 }
 
 // NewDiskCache creates a new disk-based cache at the specified root directory
@@ -105,8 +107,16 @@ func (d *DiskCache) publishOutput(tempOutputPath string, outputPath string) erro
 }
 
 func (d *DiskCache) writeMapping(actionID string, outputID string) error {
-	// 2. Write action mapping atomically via temp file
 	mappingPath := filepath.Join(d.actionsPath, actionID)
+
+	mu, _ := d.locks.LoadOrStore(actionID, &sync.Mutex{})
+	mu.(*sync.Mutex).Lock()
+	defer mu.(*sync.Mutex).Unlock()
+
+	if _, err := os.Stat(mappingPath); err == nil {
+		return nil
+	}
+
 	tempMapping, err := os.CreateTemp(d.actionsPath, actionID+".tmp.*")
 	if err != nil {
 		return fmt.Errorf("creating temp mapping file: %w", err)
