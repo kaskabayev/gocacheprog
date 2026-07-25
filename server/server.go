@@ -125,7 +125,11 @@ func (s *Server) handleRequest(ctx context.Context, req protocol.Request) {
 			if err != nil {
 				resp.Err = err.Error()
 			}
+		} else if req.Command == "get" {
+			resp.DiskPath = ""
+			resp.Miss = true
 		} else {
+			resp.DiskPath = ""
 			resp.Err = err.Error()
 		}
 	}
