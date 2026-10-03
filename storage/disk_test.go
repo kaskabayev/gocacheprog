@@ -4,10 +4,12 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestDiskCacheBasicFlow(t *testing.T) {
@@ -22,39 +24,39 @@ func TestDiskCacheBasicFlow(t *testing.T) {
 		{
 			name: "stores a new output",
 			run: func(t *testing.T) {
-				path := mustPut(t, cache, ctx, "action-1", "output-1", "binary payload 1")
-				paths["action-1"] = path
+				path := mustPut(t, cache, ctx, "aa11", "bb21", "binary payload 1")
+				paths["aa11"] = path
 				assertFileContents(t, path, "binary payload 1")
 			},
 		},
 		{
 			name: "gets an existing action",
 			run: func(t *testing.T) {
-				path := mustGet(t, cache, ctx, "action-1")
-				if path != paths["action-1"] {
-					t.Fatalf("Get(action-1) = %q, want %q", path, paths["action-1"])
+				path := mustGet(t, cache, ctx, "aa11")
+				if path != paths["aa11"] {
+					t.Fatalf("Get(aa11) = %q, want %q", path, paths["aa11"])
 				}
 			},
 		},
 		{
 			name: "misses an unknown action",
 			run: func(t *testing.T) {
-				assertMiss(t, cache, ctx, "unknown-action")
+				assertMiss(t, cache, ctx, "ffff")
 			},
 		},
 		{
 			name: "reuses an existing output and records its mapping",
 			run: func(t *testing.T) {
-				path := mustPut(t, cache, ctx, "action-2", "output-1", "different content")
-				paths["action-2"] = path
-				if path != paths["action-1"] {
-					t.Fatalf("Put(action-2) path = %q, want %q", path, paths["action-1"])
+				path := mustPut(t, cache, ctx, "aa12", "bb21", "different content")
+				paths["aa12"] = path
+				if path != paths["aa11"] {
+					t.Fatalf("Put(aa12) path = %q, want %q", path, paths["aa11"])
 				}
 				assertFileContents(t, path, "binary payload 1")
 
-				mappedPath := mustGet(t, cache, ctx, "action-2")
-				if mappedPath != paths["action-1"] {
-					t.Fatalf("Get(action-2) = %q, want %q", mappedPath, paths["action-1"])
+				mappedPath := mustGet(t, cache, ctx, "aa12")
+				if mappedPath != paths["aa11"] {
+					t.Fatalf("Get(aa12) = %q, want %q", mappedPath, paths["aa11"])
 				}
 			},
 		},
@@ -75,8 +77,8 @@ func TestDiskCacheConcurrentPuts(t *testing.T) {
 			name: "same action and output keep their bytes intact",
 			run: func(t *testing.T, cache *DiskCache, ctx context.Context) {
 				const workers = 50
-				const actionID = "race-action-shared"
-				const outputID = "race-output-shared"
+				const actionID = "face0001"
+				const outputID = "feed0001"
 				const content = "highly concurrent payload"
 
 				var wg sync.WaitGroup
@@ -107,9 +109,9 @@ func TestDiskCacheConcurrentPuts(t *testing.T) {
 		{
 			name: "first publish wins for a new output",
 			run: func(t *testing.T, cache *DiskCache, ctx context.Context) {
-				const actionSlow = "race-action-slow"
-				const actionFast = "race-action-fast"
-				const outputID = "race-output-first-publish"
+				const actionSlow = "cafe0002"
+				const actionFast = "cafe0003"
+				const outputID = "feed0002"
 				const slowContent = "slow payload"
 				const fastContent = "fast payload"
 
@@ -147,8 +149,8 @@ func TestDiskCacheConcurrentPuts(t *testing.T) {
 			name: "distinct actions can point at one existing output",
 			run: func(t *testing.T, cache *DiskCache, ctx context.Context) {
 				const workers = 50
-				const seedAction = "race-action-seed"
-				const outputID = "race-output-existing"
+				const seedAction = "face0004"
+				const outputID = "feed0003"
 				const seedContent = "seed payload"
 
 				sharedPath := mustPut(t, cache, ctx, seedAction, outputID, seedContent)
@@ -159,7 +161,7 @@ func TestDiskCacheConcurrentPuts(t *testing.T) {
 				wg.Add(workers)
 
 				for i := 0; i < workers; i++ {
-					actionID := "race-action-distinct-" + strconv.Itoa(i)
+					actionID := "face1" + strconv.Itoa(i)
 					actionIDs[i] = actionID
 
 					go func(actionID string) {
@@ -291,4 +293,48 @@ func assertFileContents(t *testing.T, path string, want string) {
 	if got := string(data); got != want {
 		t.Fatalf("contents of %q = %q, want %q", path, got, want)
 	}
+}
+
+func TestDiskCacheCorruptMappingIsMiss(t *testing.T) {
+	cache := newTestDiskCache(t)
+	ctx := context.Background()
+	mustPut(t, cache, ctx, "aa11", "bb21", "payload")
+
+	// Corrupt the mapping with content that escapes the outputs dir.
+	mapping := filepath.Join(cache.actionsPath, "aa11")
+	if err := os.WriteFile(mapping, []byte("../../evil"), 0644); err != nil {
+		t.Fatalf("failed to corrupt mapping: %v", err)
+	}
+
+	assertMiss(t, cache, ctx, "aa11")
+}
+
+func TestDiskCacheSweepsStaleTempFiles(t *testing.T) {
+	dir := t.TempDir()
+	cache, err := NewDiskCache(dir)
+	if err != nil {
+		t.Fatalf("failed to create disk cache: %v", err)
+	}
+	ctx := context.Background()
+	mustPut(t, cache, ctx, "aa11", "bb21", "payload")
+
+	stale := filepath.Join(cache.outputsPath, "deadbeef.tmp.123")
+	if err := os.WriteFile(stale, []byte("leftover"), 0644); err != nil {
+		t.Fatalf("failed to create stale temp file: %v", err)
+	}
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatalf("failed to backdate temp file: %v", err)
+	}
+
+	// Reopening the cache sweeps files older than tempFileMaxAge.
+	if _, err := NewDiskCache(dir); err != nil {
+		t.Fatalf("failed to reopen disk cache: %v", err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale temp file survived sweep: %v", err)
+	}
+
+	// Cached entries are untouched.
+	mustGet(t, cache, ctx, "aa11")
 }
