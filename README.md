@@ -44,6 +44,23 @@ export GOCACHEPROG="./gocache --cache-dir PATH/TO/TEMP_FOLDER"
 
 If no cache directory is specified, it defaults to `USER_CACHE_DIR/.gocacheprog`, e.g. for MacOS it is `~/Library/Caches/...`
 
+### Remote caching (S3)
+
+Pass `--s3-bucket` to layer an S3-compatible object store behind the local disk: builds store results locally and upload them in the background; cache misses fall back to the bucket and download on demand. Remote failures never fail a build — the cache degrades to local-only.
+
+```bash
+# AWS S3 (credentials from the standard environment or IAM role)
+export GOCACHEPROG="/tmp/gocache --cache-dir /tmp/my-cache --s3-bucket my-builds"
+
+# Any S3-compatible endpoint (MinIO, Cloudflare R2, ...)
+export GOCACHEPROG="/tmp/gocache --cache-dir /tmp/my-cache \
+  --s3-bucket my-builds --s3-endpoint https://minio.example:9000"
+```
+
+Flags: `--s3-prefix` namespaces keys inside the bucket; `--s3-access-key`/`--s3-secret-key` override credentials (default: MinIO/AWS environment variables, then IAM roles).
+
+Object layout: `PREFIX/actions/<hex>` maps an action ID to its output ID; `PREFIX/outputs/<hex>` holds the content-addressed payload.
+
 ## Testing
 
 ### Unit Tests

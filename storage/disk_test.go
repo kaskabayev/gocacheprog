@@ -246,7 +246,7 @@ func newTestDiskCache(t *testing.T) *DiskCache {
 	return cache
 }
 
-func mustPut(t *testing.T, cache *DiskCache, ctx context.Context, actionID string, outputID string, content string) string {
+func mustPut(t *testing.T, cache CacheStorage, ctx context.Context, actionID string, outputID string, content string) string {
 	t.Helper()
 
 	path, err := cache.Put(ctx, actionID, outputID, strings.NewReader(content))
@@ -257,7 +257,7 @@ func mustPut(t *testing.T, cache *DiskCache, ctx context.Context, actionID strin
 	return path
 }
 
-func mustGet(t *testing.T, cache *DiskCache, ctx context.Context, actionID string) string {
+func mustGet(t *testing.T, cache CacheStorage, ctx context.Context, actionID string) string {
 	t.Helper()
 
 	path, err := cache.Get(ctx, actionID)
@@ -271,7 +271,7 @@ func mustGet(t *testing.T, cache *DiskCache, ctx context.Context, actionID strin
 	return path
 }
 
-func assertMiss(t *testing.T, cache *DiskCache, ctx context.Context, actionID string) {
+func assertMiss(t *testing.T, cache CacheStorage, ctx context.Context, actionID string) {
 	t.Helper()
 
 	path, err := cache.Get(ctx, actionID)
