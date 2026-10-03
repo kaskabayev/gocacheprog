@@ -1,0 +1,11 @@
+{
+  "identities": [
+    {
+      "name": "gocache",
+      "credentials": [
+        { "accessKey": "gocachekey", "secretKey": "gocachesecret" }
+      ],
+      "actions": ["Admin", "Read", "Write"]
+    }
+  ]
+}

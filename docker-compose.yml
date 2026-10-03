@@ -1,0 +1,10 @@
+# Real S3-compatible server (SeaweedFS) for the manual integration test.
+# See scripts/manual-e2e.sh and the README "Manual Integration Test" section.
+services:
+  s3:
+    image: chrislusf/seaweedfs:latest
+    command: server -s3 -s3.config=/etc/seaweedfs/s3.json
+    ports:
+      - "8333:8333"
+    volumes:
+      - ./docker/s3.json:/etc/seaweedfs/s3.json:ro

@@ -2,16 +2,21 @@ package storage
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
 	actionsDir = "actions"
 	outputsDir = "outputs"
+	// Temp files older than this are leftovers from crashed runs and are
+	// swept at startup.
+	tempFileMaxAge = time.Hour
 )
 
 // CacheStorage defines the interface for cache storage implementations
@@ -37,11 +42,34 @@ func NewDiskCache(root string) (*DiskCache, error) {
 			return nil, fmt.Errorf("creating directory %s: %w", dir, err)
 		}
 	}
+	sweepTempFiles(actionsPath, outputsPath)
 	return &DiskCache{
 		rootDir:     root,
 		actionsPath: actionsPath,
 		outputsPath: outputsPath,
 	}, nil
+}
+
+// sweepTempFiles removes temp files left behind by crashed runs. Best effort:
+// active writers never touch files older than tempFileMaxAge.
+func sweepTempFiles(dirs ...string) {
+	cutoff := time.Now().Add(-tempFileMaxAge)
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if !strings.Contains(entry.Name(), ".tmp.") {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil || info.ModTime().After(cutoff) {
+				continue
+			}
+			_ = os.Remove(filepath.Join(dir, entry.Name()))
+		}
+	}
 }
 
 // Put stores data in the cache and returns the path where it was stored
@@ -92,15 +120,20 @@ func (d *DiskCache) Put(ctx context.Context, actionID string, outputID string, r
 }
 
 func (d *DiskCache) publishOutput(tempOutputPath string, outputPath string) error {
-	if err := os.Link(tempOutputPath, outputPath); err != nil {
+	err := os.Link(tempOutputPath, outputPath)
+	if err == nil || os.IsExist(err) {
+		_ = os.Remove(tempOutputPath)
+		return nil
+	}
+	// Some filesystems (e.g. NFS, SMB) do not support hard links; fall back
+	// to an atomic rename. Another process may have published first.
+	if err := os.Rename(tempOutputPath, outputPath); err != nil {
 		_ = os.Remove(tempOutputPath)
 		if os.IsExist(err) {
 			return nil
 		}
-		return fmt.Errorf("linking output file: %w", err)
+		return fmt.Errorf("publishing output file: %w", err)
 	}
-
-	_ = os.Remove(tempOutputPath)
 	return nil
 }
 
@@ -140,8 +173,15 @@ func (d *DiskCache) Get(ctx context.Context, actionID string) (string, error) {
 		return "", fmt.Errorf("reading mapping file: %w", err)
 	}
 
+	id := strings.TrimSpace(string(outputID))
+	if _, err := hex.DecodeString(id); err != nil {
+		// Corrupt mapping file; treat as a cache miss rather than pointing
+		// outside the cache or failing the build.
+		return "", nil
+	}
+
 	// output ID file from action mapping file
-	outputPath := filepath.Join(d.outputsPath, strings.TrimSpace(string(outputID)))
+	outputPath := filepath.Join(d.outputsPath, id)
 	if _, err := os.Stat(outputPath); err != nil {
 		if os.IsNotExist(err) {
 			return "", nil

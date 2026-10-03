@@ -18,7 +18,7 @@ GoCache is an example of caching system for GOCACHEPROG Go 1.24 environmental va
 
 ## Requirements
 
-- Go 1.24 or higher
+- Go 1.25 or higher
 
 ## Installation
 
@@ -44,6 +44,23 @@ export GOCACHEPROG="./gocache --cache-dir PATH/TO/TEMP_FOLDER"
 
 If no cache directory is specified, it defaults to `USER_CACHE_DIR/.gocacheprog`, e.g. for MacOS it is `~/Library/Caches/...`
 
+### Remote caching (S3)
+
+Pass `--s3-bucket` to layer an S3-compatible object store behind the local disk: builds store results locally and upload them in the background; cache misses fall back to the bucket and download on demand. Remote failures never fail a build — the cache degrades to local-only.
+
+```bash
+# AWS S3 (credentials from the standard environment or IAM role)
+export GOCACHEPROG="/tmp/gocache --cache-dir /tmp/my-cache --s3-bucket my-builds"
+
+# Any S3-compatible endpoint (Cloudflare R2, SeaweedFS, MinIO, ...)
+export GOCACHEPROG="/tmp/gocache --cache-dir /tmp/my-cache \
+  --s3-bucket my-builds --s3-endpoint https://s3.example.com"
+```
+
+Flags: `--s3-prefix` namespaces keys inside the bucket; `--s3-access-key`/`--s3-secret-key` override credentials (default: standard AWS/MinIO environment variables, then IAM roles).
+
+Object layout: `PREFIX/actions/<hex>` maps an action ID to its output ID; `PREFIX/outputs/<hex>` holds the content-addressed payload.
+
 ## Testing
 
 ### Unit Tests
@@ -65,6 +82,18 @@ Run with race detector:
 ```bash
 go test -race ./...
 ```
+
+### Manual Integration Test (S3 remote cache)
+
+Spins up a real S3-compatible server (SeaweedFS) in Docker and simulates two machines sharing one bucket, plus a build with the remote cache down:
+
+```bash
+docker compose up -d
+./scripts/manual-e2e.sh
+docker compose down
+```
+
+The script prints PASS per scenario and fails loudly otherwise. Credentials and bucket can be overridden with `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`.
 
 ### End-to-End Testing
 
