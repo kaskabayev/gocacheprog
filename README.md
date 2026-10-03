@@ -18,7 +18,7 @@ GoCache is an example of caching system for GOCACHEPROG Go 1.24 environmental va
 
 ## Requirements
 
-- Go 1.24 or higher
+- Go 1.25 or higher
 
 ## Installation
 
@@ -52,12 +52,12 @@ Pass `--s3-bucket` to layer an S3-compatible object store behind the local disk:
 # AWS S3 (credentials from the standard environment or IAM role)
 export GOCACHEPROG="/tmp/gocache --cache-dir /tmp/my-cache --s3-bucket my-builds"
 
-# Any S3-compatible endpoint (MinIO, Cloudflare R2, ...)
+# Any S3-compatible endpoint (Cloudflare R2, SeaweedFS, MinIO, ...)
 export GOCACHEPROG="/tmp/gocache --cache-dir /tmp/my-cache \
-  --s3-bucket my-builds --s3-endpoint https://minio.example:9000"
+  --s3-bucket my-builds --s3-endpoint https://s3.example.com"
 ```
 
-Flags: `--s3-prefix` namespaces keys inside the bucket; `--s3-access-key`/`--s3-secret-key` override credentials (default: MinIO/AWS environment variables, then IAM roles).
+Flags: `--s3-prefix` namespaces keys inside the bucket; `--s3-access-key`/`--s3-secret-key` override credentials (default: standard AWS/MinIO environment variables, then IAM roles).
 
 Object layout: `PREFIX/actions/<hex>` maps an action ID to its output ID; `PREFIX/outputs/<hex>` holds the content-addressed payload.
 
