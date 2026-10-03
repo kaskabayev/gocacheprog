@@ -83,6 +83,18 @@ Run with race detector:
 go test -race ./...
 ```
 
+### Manual Integration Test (S3 remote cache)
+
+Spins up a real S3-compatible server (SeaweedFS) in Docker and simulates two machines sharing one bucket, plus a build with the remote cache down:
+
+```bash
+docker compose up -d
+./scripts/manual-e2e.sh
+docker compose down
+```
+
+The script prints PASS per scenario and fails loudly otherwise. Credentials and bucket can be overridden with `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`.
+
 ### End-to-End Testing
 
 Test the cache against real Go builds using the `GOCACHEPROG` environment variable.
