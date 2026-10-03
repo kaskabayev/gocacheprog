@@ -25,7 +25,6 @@ func main() {
 	if err := os.MkdirAll(*cacheDir, 0755); err != nil {
 		log.Fatalf("Failed to create cache directory %s: %v", *cacheDir, err)
 	}
-	log.Printf("Cache directory is set to: %s", *cacheDir)
 
 	// Initialize the disk cache
 	diskCache, err := storage.NewDiskCache(*cacheDir)
@@ -43,8 +42,11 @@ func main() {
 		log.Fatalf("Failed to send handshake: %v", err)
 	}
 
-	// Process requests until EOF
+	// Process requests until "close" or EOF
 	if err := cacheServer.ProcessRequests(context.Background()); err != nil {
 		log.Fatalf("Error processing requests: %v", err)
+	}
+	if err := diskCache.Close(); err != nil {
+		log.Fatalf("Error closing cache: %v", err)
 	}
 }

@@ -25,6 +25,7 @@ type Server struct {
 	dec     *json.Decoder
 	enc     *json.Encoder
 	writeMu sync.Mutex
+	wg      sync.WaitGroup
 }
 
 // NewServer creates a new cache server with the given storage and I/O
@@ -65,6 +66,7 @@ func (s *Server) ProcessRequests(ctx context.Context) error {
 		var req protocol.Request
 		if err := s.dec.Decode(&req); err != nil {
 			if errors.Is(err, io.EOF) {
+				s.wg.Wait()
 				return nil
 			}
 			return fmt.Errorf("error decoding request: %w", err)
@@ -85,7 +87,18 @@ func (s *Server) ProcessRequests(ctx context.Context) error {
 			}
 		}
 
+		// Reply to "close", wait for in-flight requests, and exit, as the protocol requires.
+		if req.Command == "close" {
+			if err := s.writeResponse(protocol.Response{ID: req.ID}); err != nil {
+				return fmt.Errorf("failed to write close response: %w", err)
+			}
+			s.wg.Wait()
+			return nil
+		}
+
+		s.wg.Add(1)
 		go func(req protocol.Request) {
+			defer s.wg.Done()
 			s.handleRequest(ctx, req)
 		}(req)
 	}
@@ -112,10 +125,11 @@ func (s *Server) handleRequest(ctx context.Context, req protocol.Request) {
 		if resp.DiskPath, err = s.cache.Put(ctx, actionHex, outputHex, r); err != nil {
 			resp.Err = err.Error()
 		}
-	case "close":
+	default:
+		resp.Err = fmt.Sprintf("unsupported command %q", req.Command)
 	}
 
-	if req.Command != "close" && resp.DiskPath != "" {
+	if resp.DiskPath != "" {
 		if fi, err := os.Stat(resp.DiskPath); err == nil {
 			resp.Size = fi.Size()
 			modTime := fi.ModTime()

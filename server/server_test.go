@@ -96,6 +96,40 @@ func TestHandleRequestPutErrorWhenFileVanishes(t *testing.T) {
 	}
 }
 
+func TestHandleRequestUnsupportedCommand(t *testing.T) {
+	cache := &mockCache{}
+	var buf bytes.Buffer
+	srv := NewServer(cache, bufio.NewReader(nil), bufio.NewWriter(&buf))
+
+	resp := handleAndGetResp(t, srv, &buf, protocol.Request{
+		ID:      1,
+		Command: "bogus",
+	})
+
+	if resp.Err == "" {
+		t.Fatalf("expected error for unsupported command, got none")
+	}
+}
+
+func TestProcessRequestsCloseExits(t *testing.T) {
+	cache := &mockCache{}
+	input := `{"ID":7,"Command":"close"}` + "\n"
+	var buf bytes.Buffer
+	srv := NewServer(cache, bufio.NewReader(strings.NewReader(input)), bufio.NewWriter(&buf))
+
+	if err := srv.ProcessRequests(context.Background()); err != nil {
+		t.Fatalf("ProcessRequests returned error on close: %v", err)
+	}
+
+	var resp protocol.Response
+	if err := json.Unmarshal(buf.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode close response: %v", err)
+	}
+	if resp.ID != 7 {
+		t.Fatalf("expected close response ID=7, got %d", resp.ID)
+	}
+}
+
 func TestHandleRequestGetHit(t *testing.T) {
 	dir := t.TempDir()
 	outputID := "abcdef1234567890"
